@@ -1,22 +1,15 @@
+from http import HTTPStatus
 import logging
 import os
 import time
 
-
 from dotenv import load_dotenv
-from http import HTTPStatus
 import requests
 from telebot import TeleBot
 
-from exceptions import StatusError
+from exceptions import Current_dateError, JsonError, RequestError, StatusError
 
 load_dotenv()
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -43,8 +36,8 @@ def check_tokens():
 
 def send_message(bot, message):
     """Отправляет сообщение в Telegram-чат."""
-    logging.debug('Удачная отправка любого сообщения в Telegram')
     bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    logger.debug('Удачная отправка любого сообщения в Telegram')
 
 
 def get_api_answer(timestamp):
@@ -53,11 +46,13 @@ def get_api_answer(timestamp):
     try:
         homework_statuses = requests.get(ENDPOINT, headers=HEADERS,
                                          params=payload)
-    except Exception as error:
-        logging.error(f'Ошибка при запросе к API: {error}')
-    if homework_statuses.status_code != HTTPStatus.OK:
-        raise StatusError('Ошибка в ответе сервера')
-    homework_statuses = homework_statuses.json()
+        if homework_statuses.status_code != HTTPStatus.OK:
+            raise StatusError('Ошибка в ответе сервера')
+        homework_statuses = homework_statuses.json()
+    except requests.exceptions.RequestException:
+        raise RequestError('Ошибка при запросе к API')
+    except ValueError:
+        raise JsonError('Ошибка декодирования JSON')
     return homework_statuses
 
 
@@ -70,6 +65,9 @@ def check_response(response):
         raise KeyError('Нет ключа homeworks')
     if not isinstance(homeworks, list):
         raise TypeError('Значению ключа - не список')
+    current_date = response.get('current_date')
+    if current_date is None:
+        raise Current_dateError('Нет ключа current_date')
     return homeworks
 
 
@@ -81,33 +79,46 @@ def parse_status(homework):
         raise KeyError('Нет ключа homework_name')
     if homework_status not in HOMEWORK_VERDICTS:
         message = 'Недокументированный статус домашней работы.'
-        raise StatusError(message)
+        raise KeyError(message)
     verdict = HOMEWORK_VERDICTS[homework['status']]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
-    if not check_tokens():
-        logging.critical(' ')
-        raise StatusError
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
+    if not check_tokens():
+        message = 'Отсутствуют токены'
+        logger.critical(message)
+        send_message(bot, message)
+        raise StatusError
     while True:
         try:
             response = get_api_answer(timestamp)
-            right_response = check_response(response)
-            if right_response:
-                status = parse_status(right_response[0])
+            checked_response = check_response(response)
+            if checked_response:
+                status = parse_status(checked_response[0])
                 send_message(bot, status)
             else:
-                logging.debug('Отсутствие в ответе новых статусов')
+                message = 'Отсутствие в ответе новых статусов'
+                logger.debug(message)
+                send_message(bot, message)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logging.error(message)
-        time.sleep(RETRY_PERIOD)
+            logger.error(message)
+            if error != Current_dateError:
+                send_message(bot, message)
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        format=(
+            '%(asctime)s - %(name)s - %(levelname)s - '
+            '%(lineno)d - %(funcName)s - %(message)s'),
+        level=logging.DEBUG,
+    )
     main()
