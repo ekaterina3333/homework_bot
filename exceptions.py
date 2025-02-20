@@ -1,4 +1,4 @@
-class Current_dateError(Exception):
+class CurrentDateError(Exception):
     """Отсутствие ключа current_date."""
 
     pass
@@ -18,5 +18,11 @@ class RequestError(Exception):
 
 class StatusError(Exception):
     """Ошибка ответа сервера."""
+
+    pass
+
+
+class MessageSendError(Exception):
+    """Ошибка отправки сообщения в Telegram."""
 
     pass
