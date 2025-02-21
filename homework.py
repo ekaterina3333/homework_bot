@@ -34,10 +34,14 @@ HOMEWORK_VERDICTS = {
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     missing_tokens = []
-    if PRACTICUM_TOKEN is None:
-        missing_tokens.append('PRACTICUM_TOKEN')
-    if TELEGRAM_TOKEN is None:
-        missing_tokens.append('TELEGRAM_TOKEN')
+    tokens = {
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN
+    }
+    for token_name, token_value in tokens.items():
+        if token_value is None:
+            missing_tokens.append(token_name)
     return missing_tokens
 
 
@@ -45,7 +49,7 @@ def send_message(bot, message):
     """Отправляет сообщение в Telegram-чат."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except TeleBot.error.TelegramError:
+    except TeleBot.apihelper.ApiException:
         raise MessageSendError('Сообщение не отправлено')
     else:
         logger.debug('Удачная отправка сообщения в Telegram')
@@ -79,7 +83,7 @@ def check_response(response):
     if current_date is None:
         raise CurrentDateError('Нет ключа current_date')
     if not isinstance(current_date, int):
-        raise TypeError('Значению ключа - не число')
+        raise CurrentDateError('Значению ключа - не число')
     return homeworks
 
 
@@ -107,13 +111,16 @@ def main():
         message = f'Отсутствуют токены: {", ".join(missing_tokens)}'
         logger.critical(message)
         raise ValueError(message)
+    last_sent_message = ''
     while True:
         try:
             response = get_api_answer(timestamp)
             checked_response = check_response(response)
             if checked_response:
                 status = parse_status(checked_response[0])
-                send_message(bot, status)
+                if status != last_sent_message:
+                    send_message(bot, status)
+                    last_sent_message = send_message(bot, status)
             else:
                 message = 'Отсутствие в ответе новых статусов'
                 logger.debug(message)
@@ -123,8 +130,12 @@ def main():
             logger.error('Ошибка в ключе current_date')
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logger.error(message)
-            send_message(bot, message)
+            if last_sent_message != message:
+                logger.error(message)
+            try:
+                send_message(bot, message)
+            except MessageSendError:
+                logger.error('Ошибка отправки сообщения в Telegram')
         finally:
             time.sleep(RETRY_PERIOD)
 
