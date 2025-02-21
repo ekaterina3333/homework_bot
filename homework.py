@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import requests
 from telebot import TeleBot
 
-from exceptions import (CurrentDateError, JsonError, MessageSendError,
+from exceptions import (CurrentDateError, JsonError,
                         RequestError, StatusError)
 
 load_dotenv()
@@ -50,7 +50,7 @@ def send_message(bot, message):
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     except TeleBot.apihelper.ApiException:
-        raise MessageSendError('Сообщение не отправлено')
+        logger.error('Ошибка отправки сообщения в Telegram')
     else:
         logger.debug('Удачная отправка сообщения в Telegram')
 
@@ -120,22 +120,18 @@ def main():
                 status = parse_status(checked_response[0])
                 if status != last_sent_message:
                     send_message(bot, status)
-                    last_sent_message = send_message(bot, status)
+                    last_sent_message = status
             else:
                 message = 'Отсутствие в ответе новых статусов'
                 logger.debug(message)
-        except MessageSendError:
-            logger.error('Ошибка отправки сообщения в Telegram')
         except CurrentDateError:
             logger.error('Ошибка в ключе current_date')
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             if last_sent_message != message:
                 logger.error(message)
-            try:
+                last_sent_message = message
                 send_message(bot, message)
-            except MessageSendError:
-                logger.error('Ошибка отправки сообщения в Telegram')
         finally:
             time.sleep(RETRY_PERIOD)
 

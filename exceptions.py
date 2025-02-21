@@ -20,9 +20,3 @@ class StatusError(Exception):
     """Ошибка ответа сервера."""
 
     pass
-
-
-class MessageSendError(Exception):
-    """Ошибка отправки сообщения в Telegram."""
-
-    pass
